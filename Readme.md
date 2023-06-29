@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 使用我自制的UEFI-BootLibrary
 # Use my homemade UEFI-BootLibrary
 
