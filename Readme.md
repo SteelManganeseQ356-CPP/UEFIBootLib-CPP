@@ -98,4 +98,3 @@ extern "C"
 - If there is piracy, the whole family dies mother
 =======
 一个东西，用CPP写的
->>>>>>> 8ac6afcc42e3bbf26ccedd707218bbf645297e2a
