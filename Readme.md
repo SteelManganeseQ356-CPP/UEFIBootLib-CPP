@@ -14,19 +14,7 @@
 - Definition struct BootConfig, as follows definition:
 
 ```cpp
-  Boot::BootConfig bootConfig{
-   {0},
-   {0},
-   {{4096 * 4},
-    {nullptr},
-    {0},
-    {0},
-    {0}},
-   {{0},
-    {0},
-    {(CHAR8 *)"System Name"},
-    {10000},
-    {0ULL}}};
+  QuantumNEC::Boot::BootConfig bootConfig { };
 ```
 
 - 定义BootService类，如下定义：
@@ -34,60 +22,62 @@
 
 ```cpp
   /* 初始化屏幕和初始化日志系统 */
-  Boot::BootService service(ImageHandle, bootConfig);
+  QuantumNEC::Boot::BootServiceMain bootService { &bootConfig };
 ```
 
 - 使用BootService类，如下
 - Use class BootService, as follows:
 
 ```cpp
-  /* 绘制logo */
-  service.DrawLogo(ImageHandle, L"Your Logo");
-  /* 读取内核 */
-  service.Relocate(ImageHandle, L"Your Kernel");
-  /* 获取MemoryMap */
-  service.GetMemMap();
-  /* 跳转内核 */
-  service.JumpToKernel(ImageHandle);
+  /// 读取Logo并显示
+  Status = bootService.getBmpConfig( &bootConfig.BmpData ).displayLogo( L"\\EFI\\Boot\\Logo.BMP" );
+  // 读取ACPI表
+  Status = bootService.getApicTable( );
+  // 获取内存布局
+  Status = bootService.getMemoryMap( );
+  // 读取并装载内核
+  Status = bootService.loadKernel( L"\\QuantumNEC\\microKernel.elf" );
+  // 设置内核页表
+  Status = bootService.setPageTable( );
+  // 读取Unicode字体并弹出
+  Status = bootService.setUnicodeTTF( );
+  // 跳转内核
+  Status = bootService.jumpToKernel( &bootConfig );
 ```
 
 - 示例
 
 ```cpp
-#include "../Include/Boot/Boot.hpp"
-extern "C"
-{
- EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
- {
-  EFI_STATUS Status = EFI_SUCCESS;
-
-  QuantumNEC::Boot::BootConfig bootConfig{
-   {0},
-   {0},
-   {{4096 * 4},
-    {nullptr},
-    {0},
-    {0},
-    {0}},
-   {{0},
-    {0},
-    {(CHAR8 *)"QuantumNEC"},
-    {10000},
-    {0ULL}}};
-  /* 初始化屏幕和初始化日志系统 */
-  QuantumNEC::Boot::BootService service(ImageHandle, bootConfig);
-  /* 绘制logo */
-  Status = service.DrawLogo(ImageHandle, L"EFI\\Boot\\Logo.bmp");
-  /* 读取内核 */
-  Status = service.Relocate(ImageHandle, L"QuantumNEC\\ELFKernel\\Kernel.elf");
-  /* 获取MemoryMap */
-  Status = service.GetMemMap();
-  /* 跳转内核 */
-  Status = service.JumpToKernel(ImageHandle);
-
-  return Status;
- }
+#include <Boot/Boot.hpp>
+#include <Boot/Include.hpp>
+auto initializeGlobalData( IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable ) -> VOID {     // 初始化全局变量
+    QuantumNEC::Boot::GlobalImageHandle = ImageHandle;
+    QuantumNEC::Boot::GlobalSystemTable = SystemTable;
+    return;
 }
+extern "C" EFI_STATUS EFIAPI UefiMain( IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable ) {
+    EFI_STATUS Status { EFI_SUCCESS };
+    initializeGlobalData( ImageHandle, SystemTable );
+    QuantumNEC::Boot::BootConfig bootConfig { };
+    QuantumNEC::Boot::BootServiceMain bootService { &bootConfig };
+    // 读取Logo并显示
+    Status = bootService.getBmpConfig( &bootConfig.BmpData ).displayLogo( L"\\EFI\\Boot\\Logo.BMP" );
+    // 读取ACPI表
+    Status = bootService.getApicTable( );
+    // 获取内存布局
+    Status = bootService.getMemoryMap( );
+    // 读取并装载内核
+    Status = bootService.loadKernel( L"\\QuantumNEC\\microKernel.elf" );
+    // 设置内核页表
+    Status = bootService.setPageTable( );
+    // 读取Unicode字体并弹出
+    Status = bootService.setUnicodeTTF( );
+    // 跳转内核
+    Status = bootService.jumpToKernel( &bootConfig );
+
+    return EFI_SUCCESS;
+}
+
 ```
 
 ## 版权
