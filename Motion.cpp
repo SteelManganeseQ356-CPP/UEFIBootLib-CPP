@@ -1,89 +1,73 @@
-/***************************************************************************************************************************************************************************************************************************************************************************
-*  Copyright (c) 2023 SteelManganeseQ356-CPP																																																							   *
-*  QuantumNEC OS is licensed under Mulan PSL v2.																																																						   *
-*  You can use this software according to the terms and conditions of the Mulan PSL v2. 																																												   *
-*  You may obtain a copy of Mulan PSL v2 at:																																																							   *
-*            http://license.coscl.org.cn/MulanPSL2																																																						   *
-*   THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.  														       *
-*   See the Mulan PSL v2 for more details.  																																																							   *
-***************************************************************************************************************************************************************************************************************************************************************************/
-#include "Graphics.h"
-namespace Boot::Graphics
-{
-    EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
-    EFI_GRAPHICS_OUTPUT_BLT_PIXEL Grey = {166, 166, 166, 0};
-
-    EFI_STATUS BootService_Graphics::GraphicsConfigInit(IN EFI_HANDLE ImageHandle, OUT GraphicsConfig *graphicsConfig)
-    {
-
-        EFI_STATUS Status = EFI_SUCCESS;
-
-        Status = this->GetGopHandle(ImageHandle, &Gop);
-
-        Status = this->SetVideoMode(Gop);
-
-        graphicsConfig->FrameBufferBase = Gop->Mode->FrameBufferBase;
-        graphicsConfig->FrameBufferSize = Gop->Mode->FrameBufferSize;
-        graphicsConfig->HorizontalResolution = Gop->Mode->Info->HorizontalResolution;
-        graphicsConfig->VerticalResolution = Gop->Mode->Info->VerticalResolution;
-        graphicsConfig->PixelsPerScanLine = Gop->Mode->Info->PixelsPerScanLine;
-        DrawStep(::Step++);
-        return Status;
-    }
-
-    EFI_STATUS BootService_Graphics::DrawLogo(IN EFI_HANDLE ImageHandle, IN CONST wchar_t *LogoFileName)
-    {
-
-        EFI_STATUS Status = EFI_SUCCESS;
-
-        CHAR16 *FileName = (CHAR16 *)LogoFileName;
-        UINTN Hor = Gop->Mode->Info->HorizontalResolution;
-        UINTN Ver = Gop->Mode->Info->VerticalResolution;
-        if (Hor * 3 == Ver * 4)
-        {
-            FileName = (CHAR16 *)LogoFileName;
-        }
-        EFI_FILE_PROTOCOL *Logo;
-        Status = this->GetFileHandle(ImageHandle, FileName, &Logo);
-
-        EFI_PHYSICAL_ADDRESS LogoAddress;
-        Status = this->ReadFile(Logo, &LogoAddress);
-
-        Status = this->BmpTransform(LogoAddress);
-
-        UINTN X = (Hor - this->BmpData_.Width) / 2;
-        UINTN Y = (Ver - this->BmpData_.Height) / 2;
-
-        Status = this->DrawBmp(Gop, X, Y);
-
-        DrawStep(::Step++);
-
-        return Status;
-    }
-    EFI_STATUS DrawStep(IN UINTN Step) // 绘制进度条
-    {
-        EFI_STATUS Status = EFI_SUCCESS;
-
-        // 把分辨率除以16
-
-        UINTN BlockWidth = Gop->Mode->Info->HorizontalResolution >> 6;
-        UINTN BlockHeight = Gop->Mode->Info->VerticalResolution >> 6;
-        UINTN StartX = (Gop->Mode->Info->HorizontalResolution - (BlockWidth + GAP) * 10 - GAP) / 2;
-        UINTN StartY = (Gop->Mode->Info->VerticalResolution * 3) >> 2;
-
-        UINTN X = StartX + (BlockWidth + GAP) * Step;
-
-        Status = Gop->Blt(Gop, &Grey, EfiBltVideoFill, 0, 0, X, StartY, BlockWidth, BlockHeight, 0);
-
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to Blt Block.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:DrawStep:%d.\n", Step);
-#endif
-
-        return Status;
-    }
+#include <Boot/Graphics.hpp>
+#include <Boot/Include.hpp>
+#include <Boot/Motion.hpp>
+#include <Boot/Utils.hpp>
+#include <Boot/Logger.hpp>
+namespace QuantumNEC::Boot {
+auto BootServiceMotion::bmpCheck( IN BmpHeader *bmpHdr ) -> decltype( auto ) {
 }
+auto BootServiceMotion::bmpTranslate( IN EFI_PHYSICAL_ADDRESS BmpBase ) -> decltype( auto ) {
+    EFI_STATUS Status { EFI_SUCCESS };
+    auto conversion { [ & ]( UINTN Offset, UINTN Size ) -> UINTN {
+        UINTN Result = 0;
+        for ( UINTN i = 0; i < Size; ++i ) {
+            Result += *( reinterpret_cast< UINT8 * >( BmpBase ) + Offset + i ) << i * 8;
+        }
+        return Result;
+    } };
+    this->put( ).Size = conversion( 2, 4 );
+    this->put( ).PageSize = ( this->put( ).Size >> 12 ) + 1;
+    this->put( ).Offset = conversion( 10, 4 );
+    this->put( ).Width = conversion( 18, 4 );
+    this->put( ).Height = conversion( 22, 4 );
+    EFI_PHYSICAL_ADDRESS PixelStart;
+    Status = gBS->AllocatePages( AllocateAnyPages, EfiLoaderData,
+                                 this->put( ).PageSize, &PixelStart );
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL *PixelFromFile = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)( BmpBase + this->put( ).Offset + this->put( ).Width * this->put( ).Height * 4 );
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL *PixelToBuffer = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)PixelStart;
+    for ( UINTN i { }; i < this->put( ).Height; i++ ) {
+        PixelFromFile -= this->put( ).Width;
+        for ( UINTN j { }; j < this->put( ).Width; j++ ) {
+            *PixelToBuffer = *PixelFromFile;
+            PixelToBuffer++;
+            PixelFromFile++;
+        }
+        PixelFromFile -= this->put( ).Width;
+    }
+
+    this->put( ).PixelStart = PixelStart;
+    return Status;
+}
+
+auto BootServiceMotion::logoShow( IN wchar_t *logoPath ) -> EFI_STATUS {
+    EFI_STATUS Status = EFI_SUCCESS;
+    UINTN Hor = this->Gop->Mode->Info->HorizontalResolution;
+    UINTN Ver = this->Gop->Mode->Info->VerticalResolution;
+    EFI_FILE_PROTOCOL *Logo;
+    Status = this->fileUtils.GetFileHandle( logoPath, &Logo );
+
+    EFI_PHYSICAL_ADDRESS LogoAddress;
+    Status = this->fileUtils.ReadFile( Logo, &LogoAddress );
+
+    Status = this->bmpTranslate( LogoAddress );
+
+    UINTN X = ( Hor - this->put( ).Width ) / 2;
+    UINTN Y = ( Ver - this->put( ).Height ) / 2;
+
+    Status = Status = this->Gop->Blt(
+        this->Gop, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)this->put( ).PixelStart,
+        EfiBltBufferToVideo, 0, 0, X, Y, this->put( ).Width, this->put( ).Height,
+        0 );
+
+    return Status;
+}
+BootServiceMotion::BootServiceMotion( IN BmpConfig *config, IN EFI_GRAPHICS_OUTPUT_PROTOCOL *gop ) :
+    BootServiceDataManage< BmpConfig > { config },
+    Gop( gop ) {
+    LoggerConfig logIni { };
+    BootServiceLogger logger { &logIni };
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Initialize the Motion service management service." );
+    displayStep( );
+    logger.Close( );
+}
+}     // namespace QuantumNEC::Boot

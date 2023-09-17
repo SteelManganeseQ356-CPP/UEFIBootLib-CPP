@@ -1,153 +1,127 @@
-/***************************************************************************************************************************************************************************************************************************************************************************
-*  Copyright (c) 2023 SteelManganeseQ356-CPP																																																							   *
-*  QuantumNEC OS is licensed under Mulan PSL v2.																																																						   *
-*  You can use this software according to the terms and conditions of the Mulan PSL v2. 																																												   *
-*  You may obtain a copy of Mulan PSL v2 at:																																																							   *
-*            http://license.coscl.org.cn/MulanPSL2																																																						   *
-*   THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.  														       *
-*   See the Mulan PSL v2 for more details.  																																																							   *
-***************************************************************************************************************************************************************************************************************************************************************************/
-#include "File.h"
-namespace Boot::File
-{
-    EFI_STATUS BootService_File::GetFileHandle(IN EFI_HANDLE ImageHandle, IN CHAR16 *FileName, OUT EFI_FILE_PROTOCOL **FileHandle)
-    {
-        EFI_STATUS Status = EFI_SUCCESS;
-        UINTN HandleCount = 0;
-        EFI_HANDLE *HandleBuffer;
-        Status = gBS->LocateHandleBuffer(
-            ByProtocol,
-            &gEfiSimpleFileSystemProtocolGuid,
-            NULL,
-            &HandleCount,
-            &HandleBuffer);
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to LocateHanleBuffer of SimpleFileSystemProtocol.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:Get %d handles that supported SimpleFileSystemProtocol.\n", HandleCount);
-#endif
-
-        EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *FileSystem;
-        Status = gBS->OpenProtocol(
-            HandleBuffer[0],
-            &gEfiSimpleFileSystemProtocolGuid,
-            (VOID **)&FileSystem,
-            ImageHandle,
-            NULL,
-            EFI_OPEN_PROTOCOL_GET_PROTOCOL);
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to open first handle that supported SimpleFileSystemProtocol.\n");
-            return Status;
-        }
-
-        Print((CHAR16 *)L"SUCCESS:SimpleFileSystemProtocol is opened with first handle.\n");
-#endif
-        EFI_FILE_PROTOCOL *Root;
-        Status = FileSystem->OpenVolume(
-            FileSystem,
-            &Root);
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to open volume.\n");
-            return Status;
-        }
-
-        Print((CHAR16 *)L"SUCCESS:Volume is opened.\n");
-#endif
-        Status = Root->Open(
-            Root,
-            FileHandle,
-            FileName,
-            EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE,
-            EFI_OPEN_PROTOCOL_GET_PROTOCOL);
-
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to open file.\n");
-            return Status;
-        }
-
-        Print((CHAR16 *)L"SUCCESS:File is opened.\n");
-#endif
-
-        return Status;
-    }
-    EFI_STATUS BootService_File::ReadFile(IN EFI_FILE_PROTOCOL *File, OUT EFI_PHYSICAL_ADDRESS *FileBase)
-    {
-        EFI_STATUS Status = EFI_SUCCESS;
-        EFI_FILE_INFO *FileInfo;
-
-        UINTN InfoSize = sizeof(EFI_FILE_INFO) + 128;
-        Status = gBS->AllocatePool(
-            EfiLoaderData,
-            InfoSize,
-            (VOID **)&FileInfo);
-
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to AllocatePool for FileInfo.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:Memory for FileInfo is ready.\n");
-#endif
-
-        Status = File->GetInfo(
-            File,
-            &gEfiFileInfoGuid,
-            &InfoSize,
-            FileInfo);
-
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to GetInfo of Bmp.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:FileInfo is getted.\n");
-#endif
-
-        UINTN FilePageSize = (FileInfo->FileSize >> 12) + 1;
-
-        EFI_PHYSICAL_ADDRESS FileBufferAddress;
-        Status = gBS->AllocatePages(
-            AllocateAnyPages,
-            EfiLoaderData,
-            FilePageSize,
-            &FileBufferAddress);
-
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to AllocatePages for File.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:Memory for File is ready.\n");
-#endif
-
-        UINTN ReadSize = FileInfo->FileSize;
-        Status = File->Read(
-            File,
-            &ReadSize,
-            (VOID *)FileBufferAddress);
-#ifdef DEBUG
-        if (EFI_ERROR(Status))
-        {
-            Print((CHAR16 *)L"ERROR:Failed to Read File.\n");
-            return Status;
-        }
-        Print((CHAR16 *)L"SUCCESS:File is readed,size=%d.\n", ReadSize);
-#endif
-        KernelSize = ReadSize;
-        gBS->FreePool(FileInfo);
-        *FileBase = FileBufferAddress;
-        return Status;
-    }
+#include <Boot/File.hpp>
+#include <Boot/Logger.hpp>
+#include <Boot/Utils.hpp>
+#include <Boot/Include.hpp>
+namespace QuantumNEC::Boot {
+BootServiceFile::BootServiceFile( VOID ) :
+    BootServiceDataManage< FileConfig > {
+    {}
 }
+{
+}
+auto BootServiceFile::GetFileHandle( IN wchar_t *FileName, OUT EFI_FILE_PROTOCOL **FileHandle ) -> EFI_STATUS {
+    EFI_STATUS Status { EFI_SUCCESS };
+    UINTN HandleCount { };
+    EFI_HANDLE *HandleBuffer { };
+    LoggerConfig logIni { };
+    BootServiceLogger logger { &logIni };
+    // 打开文件服务
+    Status = gBS->LocateHandleBuffer( ByProtocol, &gEfiSimpleFileSystemProtocolGuid,
+                                      NULL, &HandleCount, &HandleBuffer );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to LocateHanleBuffer of SimpleFileSystemProtocol." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Get handles that supported SimpleFileSystemProtocol." );
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *FileSystem { };
+    Status = gBS->OpenProtocol(
+        HandleBuffer[ 0 ], &gEfiSimpleFileSystemProtocolGuid,
+        reinterpret_cast< VOID ** >( &FileSystem ), this->putHandle( ), NULL,
+        EFI_OPEN_PROTOCOL_GET_PROTOCOL );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to open first handle that supported SimpleFileSystemProtocol." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "SimpleFileSystemProtocol is opened with first handle." );
+    EFI_FILE_PROTOCOL *Root { };
+    // 获取文件头
+    Status = FileSystem->OpenVolume( FileSystem, &Root );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to open volume." );
+        logger.Close( );
+        return Status;
+    }
+    // 读取这个文件到内存
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Volume is opened." );
+    Status = Root->Open( Root, FileHandle, reinterpret_cast< CHAR16 * >( FileName ),
+                         EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE,
+                         EFI_OPEN_PROTOCOL_GET_PROTOCOL );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to open file." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "File is opened." );
+    // 关闭这个文件
+    Status = Root->Close( Root );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to close file." );
+        logger.Close( );
+    }
+    logger.Close( );
+    return Status;
+}
+auto BootServiceFile::ReadFile( IN EFI_FILE_PROTOCOL *File, OUT EFI_PHYSICAL_ADDRESS *FileBase ) -> EFI_STATUS {
+    EFI_STATUS Status { EFI_SUCCESS };
+    LoggerConfig logIni { };
+    BootServiceLogger logger { &logIni };
+    EFI_FILE_INFO *FileInfo { };
+    UINTN InfoSize { sizeof( EFI_FILE_INFO ) + 128 };
+    // 为文件信息描述表申请内存
+    FileInfo = new EFI_FILE_INFO[ InfoSize ];
+
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to AllocatePool for FileInfo." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Memory for FileInfo is ready." );
+    // 从文件获取内容
+    Status = File->GetInfo( File, &gEfiFileInfoGuid, &InfoSize, FileInfo );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to Get File Info." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Get File Info is ready." );
+    // 为计算文件所占用的页数量并为其分配页
+    UINTN FilePageSize { ( FileInfo->FileSize >> 12 ) + 1 };
+    EFI_PHYSICAL_ADDRESS FileBufferAddress { };
+    Status = gBS->AllocatePages( AllocateAnyPages, EfiLoaderData, FilePageSize,
+                                 &FileBufferAddress );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to AllocatePages for File." );
+        logger.Close( );
+        return Status;
+    }
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "Memory for File is ready." );
+    UINTN ReadSize { FileInfo->FileSize };
+    // 读取内容
+    Status = File->Read( File, &ReadSize, reinterpret_cast< VOID * >( FileBufferAddress ) );
+    if ( EFI_ERROR( Status ) ) {
+        logger.LogError( Status );
+        logger.LogTip( BootServiceLogger::LoggerLevel::ERROR, "Failed to Read File." );
+        logger.Close( );
+        return Status;
+    }
+    delete[] FileInfo;
+    logger.LogTip( BootServiceLogger::LoggerLevel::SUCCESS, "File is Reading." );
+    *FileBase = FileBufferAddress;
+    logger.Close( );
+    return Status;
+}
+auto BootServiceFile::CloseFile( IN EFI_FILE_PROTOCOL *File ) -> EFI_STATUS {
+    // 释放占用内存（关闭文件）
+    return File->Close( File );
+}
+}     // namespace QuantumNEC::Boot

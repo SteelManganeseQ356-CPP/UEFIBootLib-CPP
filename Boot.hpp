@@ -1,52 +1,54 @@
-/***************************************************************************************************************************************************************************************************************************************************************************
- *  Copyright (c) 2023 SteelManganeseQ356-CPP																																																							   *
- *  QuantumNEC OS is licensed under Mulan PSL v2.																																																						   *
- *  You can use this software according to the terms and conditions of the Mulan PSL v2. 																																												   *
- *  You may obtain a copy of Mulan PSL v2 at:																																																							   *
- *            http://license.coscl.org.cn/MulanPSL2																																																						   *
- *   THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.  														       *
- *   See the Mulan PSL v2 for more details.  																																																							   *
- ***************************************************************************************************************************************************************************************************************************************************************************/
-#ifndef _BOOT_HPP_
-#define _BOOT_HPP_
-#include "Graphics.h"
-#include "Elf.h"
-#include "Memory.h"
-#include "include.h"
-#include "Log.h"
-#include "Utils.h"
-#pragma pack(1)
-namespace Boot
+#pragma once
+#include <Boot/Acpi.hpp>
+#include <Boot/Args.hpp>
+#include <Boot/Data.hpp>
+#include <Boot/ELF.hpp>
+#include <Boot/Font.hpp>
+#include <Boot/Graphics.hpp>
+#include <Boot/Info.hpp>
+#include <Boot/Logger.hpp>
+#include <Boot/Memory.hpp>
+#include <Boot/Motion.hpp>
+namespace QuantumNEC::Boot {
+
+typedef struct
 {
+    GraphicsConfig GraphicsData;
+    MemoryConfig MemoryData;
+    ArgsStackConfig ArgsData;
+    AcpiConfig AcpiData;
+    UnicodeTTF FontData;
+    BmpConfig BmpData;
+    auto set( VOID ) -> VOID {
+    }
+    auto put( VOID ) -> VOID {
+    }
+} _packed BootConfig;
+class BootServiceMain :
+    public BootServiceGraphics,
+    public BootServiceInfo,
+    public BootServiceELF,
+    public BootServiceMemory,
+    public BootServicePage,
+    public BootServiceArgs,
+    public BootServiceAcpi,
+    public BootServiceFont
+{
+public:
+    /**
+     * @brief 禁用计时器
+     */
+    auto closeTimer( VOID ) -> EFI_STATUS;
+    /**
+     * @brief 跳转内核
+     */
+    auto jumpToKernel( IN BootConfig * ) -> EFI_STATUS;
 
-    typedef struct
-    {
-        Graphics::GraphicsConfig GraphicsData;
-        Graphics::BmpConfig BmpData;
-        Memory::MemoryConfig MemoryData;
-        ELF64::KernelConfig KernelData;
-
-    } BootConfig; // boot阶段数据
-
-    /* boot阶段服务 */
-    class BootService : public Graphics::BootService_Graphics,
-                        public Memory::BootService_Memory,
-                        public ELF64::BootService_ELF
-    {
-    public:
-        BootService(IN EFI_HANDLE ImageHandle, IN BootConfig &_BootData, IN CONST wchar_t far *LogFileName)
-            : BootService_Graphics{_BootData.GraphicsData, _BootData.BmpData, ImageHandle, LogFileName},
-              BootService_Memory{_BootData.MemoryData},
-              BootService_ELF{_BootData.KernelData, ImageHandle, LogFileName} {}
-        ~BootService(VOID){};
-
-    public:
-        /**
-         * @brief 跳转内核
-         */
-        EFI_STATUS JumpToKernel(IN EFI_HANDLE ImageHandle);
-    };
-}
-#pragma pack()
-
-#endif // !_BOOT_HPP_
+public:
+    explicit BootServiceMain( IN BootConfig * );
+    virtual ~BootServiceMain( VOID ) = default;
+private:
+    Config kernelConfig;
+    PageConfig memoryPage;
+};
+}     // namespace QuantumNEC::Boot
