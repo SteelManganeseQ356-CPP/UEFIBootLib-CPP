@@ -85,5 +85,3 @@ extern "C" EFI_STATUS EFIAPI UefiMain( IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_
 
 - 如有盗版，全家死🐎
 - If there is piracy, the whole family dies mother
-=======
-一个东西，用CPP写的
